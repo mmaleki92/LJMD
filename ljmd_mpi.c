@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <mpi.h>
+#include <omp.h>
+
 
 /* generic file- or pathname buffer length */
 #define BLEN 200
@@ -139,6 +141,7 @@ static void force(mdsys_t *sys)
         local_end = sys->natoms;  // Ensure the last process covers all remaining atoms
     }
 
+    #pragma omp parallel for private(j, rx, ry, rz, rsq, r, ffac) reduction(+:epot) 
     for (i = local_start; i < local_end; ++i) {
         for (j = 0; j < sys->natoms; ++j) {
             if (i != j) {
@@ -222,6 +225,9 @@ int main(int argc, char **argv)
     MPI_Comm_size( MPI_COMM_WORLD, &sys.nsize);
     MPI_Comm_rank( MPI_COMM_WORLD, &sys.mpirank);
     sys.mpicomm = MPI_COMM_WORLD;
+    
+    omp_set_num_threads(2);  // Example: set to 4 threads
+
     int nprint, i;
     char restfile[BLEN], trajfile[BLEN], ergfile[BLEN], line[BLEN];
     
