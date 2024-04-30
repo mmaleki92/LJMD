@@ -112,7 +112,7 @@ static void force(mdsys_t *sys)
     // azzero(sys->fz,sys->natoms);
     double r, ffac;
     double rx, ry, rz;
-    int i, j;
+    int ii, i, j;
     double epot=0.0;
     double rsq, rcsq, c6, c12;
     // Zeroing the accumulators
@@ -141,7 +141,16 @@ static void force(mdsys_t *sys)
         local_end = sys->natoms;  // Ensure the last process covers all remaining atoms
     }
 
+    //TODO: Problem? 
+
+    // #pragma omp parallel for private(j, rx, ry, rz, rsq, r, ffac) reduction(+:epot) 
+    // for (i=0; i < sys->natoms-1; i += sys->nsize) {
+    //         ii = i + sys->mpirank;
+    //     if (ii >= (sys->natoms - 1)) break;
+
+    #if defined(_OPENMP)
     #pragma omp parallel for private(j, rx, ry, rz, rsq, r, ffac) reduction(+:epot) 
+    #endif
     for (i = local_start; i < local_end; ++i) {
         for (j = 0; j < sys->natoms; ++j) {
             if (i != j) {
@@ -226,8 +235,10 @@ int main(int argc, char **argv)
     MPI_Comm_rank( MPI_COMM_WORLD, &sys.mpirank);
     sys.mpicomm = MPI_COMM_WORLD;
     
+    #if defined(_OPENMP)
     omp_set_num_threads(2);  // Example: set to 4 threads
-
+    #endif
+    
     int nprint, i;
     char restfile[BLEN], trajfile[BLEN], ergfile[BLEN], line[BLEN];
     
