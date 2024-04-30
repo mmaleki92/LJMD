@@ -74,12 +74,22 @@ static void azzero(double *d, const int n)
 }
 
 /* helper function: apply minimum image convention */
-static double pbc(double x, const double boxby2)
-{
-    while (x >  boxby2) x -= boxby2 + boxby2;
-    while (x < -boxby2) x += boxby2 + boxby2;
+static double pbc(double x, const double boxby2) {
+    int count = 0;  // safeguard against infinite loops
+    while (x > boxby2 && count < 100) {
+        x -= boxby2 * 2;
+        ++count;
+    }
+    while (x < -boxby2 && count < 100) {
+        x += boxby2 * 2;
+        ++count;
+    }
+    if (count >= 100) {
+        fprintf(stderr, "pbc function stuck: x=%f, boxby2=%f\n", x, boxby2);
+    }
     return x;
 }
+
 
 /* compute kinetic energy */
 static void ekin(mdsys_t *sys)
@@ -93,62 +103,77 @@ static void ekin(mdsys_t *sys)
     sys->temp = 2.0*sys->ekin/(3.0*sys->natoms-3.0)/kboltz;
 }
 
-/* compute forces */
 static void force(mdsys_t *sys) 
 {
-    double r,ffac;
-    double rx,ry,rz;
-    int i,j, ii;
-
-    /* zero energy and forces */
-    sys->epot=0.0;
     // azzero(sys->fx,sys->natoms);
     // azzero(sys->fy,sys->natoms);
     // azzero(sys->fz,sys->natoms);
-    
-    azzero(sys->cx,sys->natoms);
-    azzero(sys->cy,sys->natoms);
-    azzero(sys->cz,sys->natoms);
-
+    double r, ffac;
+    double rx, ry, rz;
+    int i, j;
+    double epot=0.0;
+    double rsq, rcsq, c6, c12;
+    // Zeroing the accumulators
+    // sys->epot = 0.0;
+    azzero(sys->cx, sys->natoms);
+    azzero(sys->cy, sys->natoms);
+    azzero(sys->cz, sys->natoms);
     
     MPI_Bcast(sys->rx, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
     MPI_Bcast(sys->ry, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
     MPI_Bcast(sys->rz, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
+    
+    MPI_Bcast(sys->vx, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
+    MPI_Bcast(sys->vy, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
+    MPI_Bcast(sys->vz, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
+    
+    // Calculate the range of particles this process will handle
+    
+    c12=4.0*sys->epsilon*pow(sys->sigma,12.0);
+    c6 =4.0*sys->epsilon*pow(sys->sigma, 6.0);
+    rcsq = sys->rcut * sys->rcut;
 
-    for (i=0; i < sys->natoms-1; i += sys->nsize) {
-        ii = i + sys->mpirank;
-        if (ii >= (sys->natoms - 1)) break;
-        for (j=i+1; i < sys->natoms; ++j) {
-            /* particles have no interactions with themselves */
-            if (i==j) continue;
-            
-            /* get distance between particle i and j */
+    int local_start = sys->mpirank * (sys->natoms / sys->nsize);
+    int local_end = (sys->mpirank+1) * (sys->natoms / sys->nsize);
+    if (sys->mpirank == sys->nsize - 1) {
+        local_end = sys->natoms;  // Ensure the last process covers all remaining atoms
+    }
+
+    for (i = local_start; i < local_end; ++i) {
+        for (j = 0; j < sys->natoms; ++j) {
+            if (i != j) {
+                
+
             rx=pbc(sys->rx[i] - sys->rx[j], 0.5*sys->box);
             ry=pbc(sys->ry[i] - sys->ry[j], 0.5*sys->box);
             rz=pbc(sys->rz[i] - sys->rz[j], 0.5*sys->box);
-            r = sqrt(rx*rx + ry*ry + rz*rz);
-      
-            /* compute force and energy if within cutoff */
-            if (r < sys->rcut) {
-                ffac = -4.0*sys->epsilon*(-12.0*pow(sys->sigma/r,12.0)/r
-                                         +6*pow(sys->sigma/r,6.0)/r);
-                
-                sys->epot += 0.5*4.0*sys->epsilon*(pow(sys->sigma/r,12.0)
-                                               -pow(sys->sigma/r,6.0));
+            rsq = rx*rx + ry*ry + rz*rz;
 
-                sys->cx[j] -= rx*ffac;
-                sys->cy[j] -= ry*ffac;
-                sys->cz[j] -= rz*ffac;
+            if (rsq < rcsq) {
+                double r6,rinv; rinv=1.0/rsq; r6=rinv*rinv*rinv;
+                ffac = (12.0*c12*r6 - 6.0*c6)*r6*rinv;
+                epot += 0.5 * r6*(c12*r6 - c6);
+
+                sys->cx[i] += rx*ffac; sys->cx[j] -= rx*ffac;
+                sys->cy[i] += ry*ffac; sys->cy[j] -= ry*ffac;
+                sys->cz[i] += rz*ffac; sys->cz[j] -= rz*ffac;
+                
+            }
             }
         }
     }
+
+    MPI_Reduce(sys->cx, sys->fx, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
+    MPI_Reduce(sys->cy, sys->fy, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
+    MPI_Reduce(sys->cz, sys->fz, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
+    MPI_Reduce(&epot, &sys->epot, 1, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
+    
 }
 
 /* velocity verlet */
 static void velverlet(mdsys_t *sys)
 {
     int i;
-    double epot=0.0;
 
     /* first part: propagate velocities by half and positions by full step */
     for (i=0; i<sys->natoms; ++i) {
@@ -163,10 +188,6 @@ static void velverlet(mdsys_t *sys)
     /* compute forces and potential energy */
     force(sys);
 
-    // MPI_Reduce(sys->cx, sys->fx, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
-    // MPI_Reduce(sys->cy, sys->fy, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
-    // MPI_Reduce(sys->cz, sys->fz, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
-    // MPI_Reduce(&epot, &sys->epot, 1, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
     /* second part: propagate velocities by another half step */
     for (i=0; i<sys->natoms; ++i) {
         sys->vx[i] += 0.5*sys->dt / mvsq2e * sys->fx[i] / sys->mass;
@@ -174,6 +195,7 @@ static void velverlet(mdsys_t *sys)
         sys->vz[i] += 0.5*sys->dt / mvsq2e * sys->fz[i] / sys->mass;
     }
 }
+
 
 /* append data to output. */
 static void output(mdsys_t *sys, FILE *erg, FILE *traj)
@@ -252,15 +274,19 @@ int main(int argc, char **argv)
     sys.rx=(double *)malloc(sys.natoms*sizeof(double));
     sys.ry=(double *)malloc(sys.natoms*sizeof(double));
     sys.rz=(double *)malloc(sys.natoms*sizeof(double));
+    
     sys.vx=(double *)malloc(sys.natoms*sizeof(double));
     sys.vy=(double *)malloc(sys.natoms*sizeof(double));
     sys.vz=(double *)malloc(sys.natoms*sizeof(double));
+
     sys.fx=(double *)malloc(sys.natoms*sizeof(double));
     sys.fy=(double *)malloc(sys.natoms*sizeof(double));
-    sys.fz=(double *)malloc(sys.natoms*sizeof(double)); 
+    sys.fz=(double *)malloc(sys.natoms*sizeof(double));
+
     sys.cx=(double *)malloc(sys.natoms*sizeof(double));
     sys.cy=(double *)malloc(sys.natoms*sizeof(double));
     sys.cz=(double *)malloc(sys.natoms*sizeof(double)); 
+
 
     if (sys.mpirank == 0) {
         /* read restart */
@@ -282,47 +308,35 @@ int main(int argc, char **argv)
 
     }
 
-    /* Broadcast initial positions and velocities */
-    MPI_Bcast(sys.rx, sys.natoms, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Bcast(sys.ry, sys.natoms, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Bcast(sys.rz, sys.natoms, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Bcast(sys.vx, sys.natoms, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Bcast(sys.vy, sys.natoms, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Bcast(sys.vz, sys.natoms, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    sys.nfi=0;
 
-    azzero(sys.fx, sys.natoms);
-    azzero(sys.fy, sys.natoms);
-    azzero(sys.fz, sys.natoms);
+    /* initialize forces and energies.*/
+    force(&sys); 
+    ekin(&sys);
 
     if (sys.mpirank == 0) {
         erg=fopen(ergfile,"w");
         traj=fopen(trajfile,"w");
-
         printf("Starting simulation with %d atoms for %d steps.\n",sys.natoms, sys.nsteps);
         printf("     NFI            TEMP            EKIN                 EPOT              ETOT\n");
         output(&sys, erg, traj);
     }
-    /* initialize forces and energies.*/
-    sys.nfi=0;
-    
-    if (sys.mpirank == 0) {
-        force(&sys); 
+
+
+    /**************************************************/
+    /* main MD loop */
+    for(sys.nfi=1; sys.nfi <= sys.nsteps; ++sys.nfi) {
+
+        if (sys.mpirank == 0) {
+        /* write output, if requested */
+        if ((sys.nfi % nprint) == 0)
+            output(&sys, erg, traj);
+        }
+
+        /* propagate system and recompute energies */
+        velverlet(&sys);
         ekin(&sys);
     }
-    // if (sys.mpirank == 0) {
-    // /**************************************************/
-    // /* main MD loop */
-    //     for(sys.nfi=1; sys.nfi <= sys.nsteps; ++sys.nfi) {
-
-    //         /* write output, if requested */
-    //         if ((sys.nfi % nprint) == 0)
-    //             output(&sys, erg, traj);
-
-    //         /* propagate system and recompute energies */
-    //         velverlet(&sys);
-    //         ekin(&sys);
-    //     }
-    // }
     // /**************************************************/
 
 
@@ -338,8 +352,8 @@ int main(int argc, char **argv)
 
     if (sys.mpirank == 0){
         /* clean up: close files, free memory */
-    fclose(erg);
-    fclose(traj);
+        fclose(erg);
+        fclose(traj);
         printf("Simulation Done.\n");
     }
 
