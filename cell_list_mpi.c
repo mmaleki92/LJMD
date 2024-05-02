@@ -16,14 +16,11 @@
 #include <stdlib.h>
 #include <math.h>
 #include <mpi.h>
-#define MAX_NEIGHBORS 100
+
+#define MAX_NEIGHBORS 26
 /* generic file- or pathname buffer length */
 #define BLEN 200
 /* Define constants for directions for easier reference */
-#define NORTH 0
-#define SOUTH 1
-#define EAST  2
-#define WEST  3
 
 /* a few physical constants */
 const double kboltz=0.0019872067;     /* boltzman constant in kcal/mol/K */
@@ -66,6 +63,7 @@ struct _mdsys {
     int natoms, nfi, nsteps;
     int ngrid, ncell, npair, nidx, _pad3;
     double delta;
+    double **ghost_data_rx, **ghost_data_ry, **ghost_data_rz; 
     MPI_Datatype particle_data_type;
     MPI_Comm mpicomm;
 };
@@ -164,63 +162,157 @@ int get_rank_from_cell_index(mdsys_t *sys, int cell_index) {
     int cells_per_rank = (sys->ncell + sys->nsize - 1) / sys->nsize; // ensure division rounds up
     return cell_index / cells_per_rank;
 }
-void update_ghost_cells(mdsys_t *sys) {
+
+void update_ghost_cellsx(mdsys_t *sys) {
     int nneighbors, *neighbors;
-    int count;
     MPI_Request *reqs;
     MPI_Status *stats;
-    int tag = 0;
 
+    // Allocate memory for neighbor indices and requests/status arrays
     neighbors = (int *)malloc(MAX_NEIGHBORS * sizeof(int));
-    reqs = (MPI_Request *)malloc(2 * MAX_NEIGHBORS * 3 * sizeof(MPI_Request));  // Allocate for send and receive for rx, ry, rz
-    stats = (MPI_Status *)malloc(2 * MAX_NEIGHBORS * 3 * sizeof(MPI_Status));
+    reqs = (MPI_Request *)malloc(6 * MAX_NEIGHBORS * sizeof(MPI_Request)); // Adjust for 3 sends and 3 receives per neighbor
+    stats = (MPI_Status *)malloc(6 * MAX_NEIGHBORS * sizeof(MPI_Status));
 
-    
-    double *ghost_data_rx = (double *)malloc(sys->natoms * sizeof(double));
-    double *ghost_data_ry = (double *)malloc(sys->natoms * sizeof(double));
-    double *ghost_data_rz = (double *)malloc(sys->natoms * sizeof(double));
 
     int num_reqs = 0;
 
     for (int i = sys->start_cell; i <= sys->end_cell; ++i) {
         nneighbors = setup_neighbors(sys, i, neighbors);
-
+        
         sys->clist[i].nghosts = 0;
-
-        if (sys->clist[i].ghostlist) {
-            free(sys->clist[i].ghostlist);
-            sys->clist[i].ghostlist = NULL;
-        }
+        free(sys->clist[i].ghostlist);
         sys->clist[i].ghostlist = (int *)malloc(nneighbors * sizeof(int));
-
+        
+        printf("num of neighbors: %d", nneighbors);
         for (int n = 0; n < nneighbors; ++n) {
             int neighbor_rank = get_rank_from_cell_index(sys, neighbors[n]);
             if (neighbor_rank != sys->mpirank) { // Only communicate with different ranks
-                // printf("me: %d n rank %d\n", sys->mpirank, neighbor_rank);
-                MPI_Irecv(&ghost_data_rx[0], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                MPI_Irecv(&ghost_data_ry[0], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                MPI_Irecv(&ghost_data_rz[0], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-             
+                int tag = n; // Use neighbor index as a unique tag
+
                 MPI_Isend(sys->rx, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                MPI_Isend(sys->ry, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                MPI_Isend(sys->rz, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+
+                MPI_Irecv(sys->ghost_data_rx[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+                // MPI_Irecv(sys->ghost_data_ry[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+                // MPI_Irecv(sys->ghost_data_rz[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+
+                // MPI_Isend(sys->ry, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+                // MPI_Isend(sys->rz, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
             }
         }
     }
 
     // Wait for all non-blocking operations to complete
     MPI_Waitall(num_reqs, reqs, stats);
-    printf("from rank %d the ghost 0 is %f \n", sys->mpirank, ghost_data_rx[0]);
-    // Clean up
+
+    for (int n = 0; n < nneighbors; ++n) {
+        printf("recivedx: %f\n", sys->ghost_data_rz[n][0]);
+        printf("sent x: %f\n", sys->rx[0]);
+    }
+
 
     free(neighbors);
     free(reqs);
     free(stats);
-    free(ghost_data_rx);
-    free(ghost_data_ry);
-    free(ghost_data_rz);
 }
 
+
+void update_ghost_cellsy(mdsys_t *sys) {
+    int nneighbors, *neighbors;
+    MPI_Request *reqs;
+    MPI_Status *stats;
+
+    // Allocate memory for neighbor indices and requests/status arrays
+    neighbors = (int *)malloc(MAX_NEIGHBORS * sizeof(int));
+    reqs = (MPI_Request *)malloc(6 * MAX_NEIGHBORS * sizeof(MPI_Request)); // Adjust for 3 sends and 3 receives per neighbor
+    stats = (MPI_Status *)malloc(6 * MAX_NEIGHBORS * sizeof(MPI_Status));
+
+
+    int num_reqs = 0;
+
+    for (int i = sys->start_cell; i <= sys->end_cell; ++i) {
+        nneighbors = setup_neighbors(sys, i, neighbors);
+        
+        sys->clist[i].nghosts = 0;
+        free(sys->clist[i].ghostlist);
+        sys->clist[i].ghostlist = (int *)malloc(nneighbors * sizeof(int));
+        
+        printf("num of neighbors: %d", nneighbors);
+        for (int n = 0; n < nneighbors; ++n) {
+            int neighbor_rank = get_rank_from_cell_index(sys, neighbors[n]);
+            if (neighbor_rank != sys->mpirank) { // Only communicate with different ranks
+                int tag = n; // Use neighbor index as a unique tag
+
+                MPI_Isend(sys->ry, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+
+                // MPI_Irecv(sys->ghost_data_rx[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+                MPI_Irecv(sys->ghost_data_ry[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+                // MPI_Irecv(sys->ghost_data_rz[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+
+                // MPI_Isend(sys->rx, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+                // MPI_Isend(sys->rz, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+            }
+        }
+    }
+
+    // Wait for all non-blocking operations to complete
+    MPI_Waitall(num_reqs, reqs, stats);
+
+
+    free(neighbors);
+    free(reqs);
+    free(stats);
+}
+
+void update_ghost_cellsz(mdsys_t *sys) {
+    int nneighbors, *neighbors;
+    MPI_Request *reqs;
+    MPI_Status *stats;
+
+    // Allocate memory for neighbor indices and requests/status arrays
+    neighbors = (int *)malloc(MAX_NEIGHBORS * sizeof(int));
+    reqs = (MPI_Request *)malloc(6 * MAX_NEIGHBORS * sizeof(MPI_Request)); // Adjust for 3 sends and 3 receives per neighbor
+    stats = (MPI_Status *)malloc(6 * MAX_NEIGHBORS * sizeof(MPI_Status));
+
+
+    int num_reqs = 0;
+
+    for (int i = sys->start_cell; i <= sys->end_cell; ++i) {
+        nneighbors = setup_neighbors(sys, i, neighbors);
+        
+        sys->clist[i].nghosts = 0;
+        free(sys->clist[i].ghostlist);
+        sys->clist[i].ghostlist = (int *)malloc(nneighbors * sizeof(int));
+        
+        printf("num of neighbors: %d", nneighbors);
+        for (int n = 0; n < nneighbors; ++n) {
+            int neighbor_rank = get_rank_from_cell_index(sys, neighbors[n]);
+            if (neighbor_rank != sys->mpirank) { // Only communicate with different ranks
+                int tag = n; // Use neighbor index as a unique tag
+
+                MPI_Isend(sys->rz, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+
+                // MPI_Irecv(sys->ghost_data_rx[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+                // MPI_Irecv(sys->ghost_data_ry[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+                MPI_Irecv(sys->ghost_data_rz[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+
+                // MPI_Isend(sys->rx, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+                // MPI_Isend(sys->ry, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
+            }
+        }
+    }
+
+    // Wait for all non-blocking operations to complete
+    MPI_Waitall(num_reqs, reqs, stats);
+
+    for (int n = 0; n < nneighbors; ++n) {
+        printf("recivedz: %f\n", sys->ghost_data_rz[n][0]);
+    }
+
+
+    free(neighbors);
+    free(reqs);
+    free(stats);
+}
 
 /* build and update cell list */
 static void updcells(mdsys_t *sys)
@@ -229,7 +321,11 @@ static void updcells(mdsys_t *sys)
     int ngrid, ncell, npair, nidx, midx;
     double delta, boxby2, boxoffs;
     boxby2 = 0.5 * sys->box;
-    update_ghost_cells(sys);   
+    
+    update_ghost_cellsx(sys);   
+    update_ghost_cellsy(sys);   
+    update_ghost_cellsz(sys);   
+
     // if (sys->clist == NULL) {
     //     ngrid  = floor(cellrat * sys->box / sys->rcut);
     //     ncell  = ngrid*ngrid*ngrid;
@@ -509,9 +605,7 @@ static void force(mdsys_t *sys) {
     // MPI_Reduce(&epot, &sys->epot, 1, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
 
 }
-void exchange_boundary_data(mdsys_t *sys, MPI_Datatype particle_data_type) {
-  
-}
+
 
 /* velocity verlet */
 static void velverlet(mdsys_t *sys)
@@ -734,6 +828,18 @@ int main(int argc, char **argv)
     sys.cy=(double *)malloc(sys.natoms*sizeof(double));
     sys.cz=(double *)malloc(sys.natoms*sizeof(double));
 
+
+    // Buffers for ghost data for each neighbor
+    sys.ghost_data_rx = (double **)malloc(MAX_NEIGHBORS * sizeof(double *));
+    sys.ghost_data_ry = (double **)malloc(MAX_NEIGHBORS * sizeof(double *));
+    sys.ghost_data_rz = (double **)malloc(MAX_NEIGHBORS * sizeof(double *));
+
+    for (int i = 0; i < MAX_NEIGHBORS; i++) {
+        sys.ghost_data_rx[i] = (double *)malloc(sys.natoms * sizeof(double));
+        sys.ghost_data_ry[i] = (double *)malloc(sys.natoms * sizeof(double));
+        sys.ghost_data_rz[i] = (double *)malloc(sys.natoms * sizeof(double));
+    }
+
     if (sys.mpirank == 0) {
         /* read restart */
         fp=fopen(restfile,"r");
@@ -813,7 +919,17 @@ int main(int argc, char **argv)
         fclose(erg);
         fclose(traj);
     }
-    
+        // Cleanup
+    for (int i = 0; i < MAX_NEIGHBORS; i++) {
+        // printf("x: %f\n",ghost_data_rx[i][1]);
+        free(sys.ghost_data_rx[i]);
+        free(sys.ghost_data_ry[i]);
+        free(sys.ghost_data_rz[i]);
+    }
+    free(sys.ghost_data_rx);
+    free(sys.ghost_data_ry);
+    free(sys.ghost_data_rz);
+
     free(sys.rx);
     free(sys.ry);
     free(sys.rz);
