@@ -37,6 +37,7 @@ struct _mdsys {
 };
 typedef struct _mdsys mdsys_t;
 
+
 /* helper function: read a line and then return
    the first string with whitespace stripped off */
 static int get_a_line(FILE *fp, char *buf)
@@ -229,12 +230,13 @@ int main(int argc, char **argv)
     // MPI Initialization phase
     MPI_Init( &argc, &argv);
 
+    double start, end, elapsed, max_elapsed;
     mdsys_t sys;
 
     MPI_Comm_size( MPI_COMM_WORLD, &sys.nsize);
     MPI_Comm_rank( MPI_COMM_WORLD, &sys.mpirank);
     sys.mpicomm = MPI_COMM_WORLD;
-    
+
     #if defined(_OPENMP)
     omp_set_num_threads(2);  // Example: set to 4 threads
     #endif
@@ -339,6 +341,7 @@ int main(int argc, char **argv)
         output(&sys, erg, traj);
     }
 
+    start = MPI_Wtime();
 
     /**************************************************/
     /* main MD loop */
@@ -356,6 +359,8 @@ int main(int argc, char **argv)
     }
     // /**************************************************/
 
+    end = MPI_Wtime();
+    elapsed = end - start;
 
     free(sys.rx);
     free(sys.ry);
@@ -374,6 +379,9 @@ int main(int argc, char **argv)
         printf("Simulation Done.\n");
     }
 
+    if (sys.mpirank == 0) {
+        printf("Time taken for velocity Verlet integration: %f seconds\n", elapsed);
+    }
 
     MPI_Finalize();
 

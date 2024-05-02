@@ -1,13 +1,6 @@
 /* 
  * simple lennard-jones potential MD code with velocity verlet.
  * units: Length=Angstrom, Mass=amu; Energy=kcal
- *
- * optimization 1: apply newton's 3rd law
- * optimization 2: avoid using pow() in the force loop.
- * optimization 3: avoid using sqrt() in the force loop.
- * optimization 4: avoid division in the force loop.
- * optimization 5: move invariant expressions outside of loops.
- * optimization 6: use cell lists to reduce number of pairs to look at.
  */
 
 #include <stdio.h>
@@ -64,7 +57,6 @@ struct _mdsys {
     int ngrid, ncell, npair, nidx, _pad3;
     double delta;
     double **ghost_data_rx, **ghost_data_ry, **ghost_data_rz; 
-    MPI_Datatype particle_data_type;
     MPI_Comm mpicomm;
 };
 typedef struct _mdsys mdsys_t;
@@ -183,20 +175,14 @@ void update_ghost_cellsx(mdsys_t *sys) {
         free(sys->clist[i].ghostlist);
         sys->clist[i].ghostlist = (int *)malloc(nneighbors * sizeof(int));
         
-        printf("num of neighbors: %d", nneighbors);
+        // printf("num of neighbors: %d", nneighbors);
         for (int n = 0; n < nneighbors; ++n) {
             int neighbor_rank = get_rank_from_cell_index(sys, neighbors[n]);
             if (neighbor_rank != sys->mpirank) { // Only communicate with different ranks
                 int tag = n; // Use neighbor index as a unique tag
 
                 MPI_Isend(sys->rx, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-
                 MPI_Irecv(sys->ghost_data_rx[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                // MPI_Irecv(sys->ghost_data_ry[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                // MPI_Irecv(sys->ghost_data_rz[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-
-                // MPI_Isend(sys->ry, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                // MPI_Isend(sys->rz, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
             }
         }
     }
@@ -204,10 +190,10 @@ void update_ghost_cellsx(mdsys_t *sys) {
     // Wait for all non-blocking operations to complete
     MPI_Waitall(num_reqs, reqs, stats);
 
-    for (int n = 0; n < nneighbors; ++n) {
-        printf("recivedx: %f\n", sys->ghost_data_rz[n][0]);
-        printf("sent x: %f\n", sys->rx[0]);
-    }
+    // for (int n = 0; n < nneighbors; ++n) {
+    //     printf("recivedx: %f\n", sys->ghost_data_rz[n][0]);
+    //     printf("sent x: %f\n", sys->rx[0]);
+    // }
 
 
     free(neighbors);
@@ -236,20 +222,14 @@ void update_ghost_cellsy(mdsys_t *sys) {
         free(sys->clist[i].ghostlist);
         sys->clist[i].ghostlist = (int *)malloc(nneighbors * sizeof(int));
         
-        printf("num of neighbors: %d", nneighbors);
+        // printf("num of neighbors: %d", nneighbors);
         for (int n = 0; n < nneighbors; ++n) {
             int neighbor_rank = get_rank_from_cell_index(sys, neighbors[n]);
             if (neighbor_rank != sys->mpirank) { // Only communicate with different ranks
                 int tag = n; // Use neighbor index as a unique tag
 
                 MPI_Isend(sys->ry, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-
-                // MPI_Irecv(sys->ghost_data_rx[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
                 MPI_Irecv(sys->ghost_data_ry[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                // MPI_Irecv(sys->ghost_data_rz[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-
-                // MPI_Isend(sys->rx, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                // MPI_Isend(sys->rz, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
             }
         }
     }
@@ -283,20 +263,15 @@ void update_ghost_cellsz(mdsys_t *sys) {
         free(sys->clist[i].ghostlist);
         sys->clist[i].ghostlist = (int *)malloc(nneighbors * sizeof(int));
         
-        printf("num of neighbors: %d", nneighbors);
+        // printf("num of neighbors: %d", nneighbors);
         for (int n = 0; n < nneighbors; ++n) {
             int neighbor_rank = get_rank_from_cell_index(sys, neighbors[n]);
             if (neighbor_rank != sys->mpirank) { // Only communicate with different ranks
                 int tag = n; // Use neighbor index as a unique tag
 
                 MPI_Isend(sys->rz, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-
-                // MPI_Irecv(sys->ghost_data_rx[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                // MPI_Irecv(sys->ghost_data_ry[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
                 MPI_Irecv(sys->ghost_data_rz[n], sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
 
-                // MPI_Isend(sys->rx, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
-                // MPI_Isend(sys->ry, sys->natoms, MPI_DOUBLE, neighbor_rank, tag, sys->mpicomm, &reqs[num_reqs++]);
             }
         }
     }
@@ -304,9 +279,9 @@ void update_ghost_cellsz(mdsys_t *sys) {
     // Wait for all non-blocking operations to complete
     MPI_Waitall(num_reqs, reqs, stats);
 
-    for (int n = 0; n < nneighbors; ++n) {
-        printf("recivedz: %f\n", sys->ghost_data_rz[n][0]);
-    }
+    // for (int n = 0; n < nneighbors; ++n) {
+    //     printf("recivedz: %f\n", sys->ghost_data_rz[n][0]);
+    // }
 
 
     free(neighbors);
@@ -325,75 +300,6 @@ static void updcells(mdsys_t *sys)
     update_ghost_cellsx(sys);   
     update_ghost_cellsy(sys);   
     update_ghost_cellsz(sys);   
-
-    // if (sys->clist == NULL) {
-    //     ngrid  = floor(cellrat * sys->box / sys->rcut);
-    //     ncell  = ngrid*ngrid*ngrid;
-    //     delta  = sys->box / ngrid;
-    //     boxoffs= boxby2 - 0.5*delta;
-        
-    //     sys->delta = delta;
-    //     sys->ngrid = ngrid;
-    //     sys->ncell = ncell;
-    
-    //     /* allocate cell list storage */
-    //     sys->clist = (cell_t *) malloc(ncell*sizeof(cell_t));
-    //     // sys->plist = (int *) malloc(2*ncell*ncell*sizeof(int));
-
-    //     /* allocate index lists within cell. cell density < 2x avg. density */
-    //     nidx = 2*sys->natoms / ncell + 2;
-    //     nidx = ((nidx/2) + 1) * 2;
-    //     sys->nidx = nidx;
-    //     for (i=0; i<ncell; ++i) {
-    //         sys->clist[i].idxlist = (int *) malloc(nidx*sizeof(int));
-    //         sys->clist[i].natoms = 0;  // Ensure natoms is initialized to zero
-    //     }
-
-    //     /* build cell pair list, assuming newtons 3rd law. */
-    //     // npair = 0;
-    //     // for (i=0; i < ncell-1; ++i) {
-    //     //     double x1,x2,y1,y2,z1,z2,rx,ry,rz;
-            
-    //     //     k  = i/ngrid/ngrid;
-    //     //     x1 = k*delta - boxoffs;
-    //     //     y1 = ((i-(k*ngrid*ngrid))/ngrid)*delta - boxoffs;
-    //     //     z1 = (i % ngrid)*delta - boxoffs;
-
-    //     //     for (j=i+1; j<ncell; ++j) {
-    //     //         k  = j/ngrid/ngrid;
-    //     //         x2 = k*delta - boxoffs;
-    //     //         y2 = ((j-(k*ngrid*ngrid))/ngrid)*delta - boxoffs;
-    //     //         z2 = (j % ngrid)*delta - boxoffs;
-
-    //     //         rx=pbc(x1 - x2, boxby2, sys->box);
-    //     //         ry=pbc(y1 - y2, boxby2, sys->box);
-    //     //         rz=pbc(z1 - z2, boxby2, sys->box);
-
-    //     //         /* check for cells on a line that are too far apart */
-    //     //         if (fabs(rx) > sys->rcut+delta) continue;
-    //     //         if (fabs(ry) > sys->rcut+delta) continue;
-    //     //         if (fabs(rz) > sys->rcut+delta) continue;
-
-    //     //         /* check for cells in a plane that are too far apart */
-    //     //         if (sqrt(rx*rx+ry*ry) > (sys->rcut+sqrt(2.0)*delta)) continue;
-    //     //         if (sqrt(rx*rx+rz*rz) > (sys->rcut+sqrt(2.0)*delta)) continue;
-    //     //         if (sqrt(ry*ry+rz*rz) > (sys->rcut+sqrt(2.0)*delta)) continue;
-
-    //     //         /* other cells that are too far apart */
-    //     //         if (sqrt(rx*rx + ry*ry + rz*rz) > (sqrt(3.0)*delta+sys->rcut)) continue;
-                
-    //     //         /* cells are close enough. add to list */
-    //     //         sys->plist[2*npair  ] = i;
-    //     //         sys->plist[2*npair+1] = j;
-    //     //         ++npair;
-    //     //     }
-    //     // }
-    //     // sys->npair = npair;
-    //     printf("Cell list has %dx%dx%d=%d cells with %d/%d pairs and "
-    //            "%d atoms/celllist.\n", ngrid, ngrid, ngrid, sys->ncell, 
-    //            sys->npair, ncell*(ncell-1)/2, nidx);
-    // }
-
     /* reset cell list and sort atoms into cells */
     ncell=sys->ncell;
     delta=sys->delta;
@@ -423,61 +329,13 @@ static void updcells(mdsys_t *sys)
         sys->clist[j].natoms = idx;
         if (idx > midx) midx=idx;
     }
-    if (midx > sys->nidx) {
-        printf("overflow in cell list: %d/%d atoms/cells.\n", midx, sys->nidx);
-        exit(1);
-    }
+    // if (midx > sys->nidx) {
+    //     printf("overflow in cell list: %d/%d atoms/cells.\n", midx, sys->nidx);
+    //     exit(1);
+    // }
 
     return;
 }
-
-
-int is_cell_near_boundary(int cell_index, int ngrid) {
-    int k = cell_index / (ngrid * ngrid); // z-coordinate
-    int j = (cell_index % (ngrid * ngrid)) / ngrid; // y-coordinate
-    int i = cell_index % ngrid; // x-coordinate
-    // Check if the cell is on the boundary of the grid
-    return (i == 0 || i == ngrid-1 || j == 0 || j == ngrid-1 || k == 0 || k == ngrid-1);
-}
-
-int is_near_boundary(mdsys_t *sys, int atom_idx, int cell_index, double threshold) {
-    if (!is_cell_near_boundary(cell_index, sys->ngrid)) {
-        printf("not near? %d \n ", cell_index);
-        return 0;  // Atom is not near boundary if its cell isn't
-    }
-
-    double x = sys->rx[atom_idx];
-    double y = sys->ry[atom_idx];
-    double z = sys->rz[atom_idx];
-    double box = sys->box;
-    double cell_width = box / sys->ngrid;
-
-    // Calculate the position within the cell
-    double local_x = fmod(x, cell_width);
-    double local_y = fmod(y, cell_width);
-    double local_z = fmod(z, cell_width);
-
-    // Check if the atom is close to the boundary of the cell
-    return (local_x < threshold || local_x > cell_width - threshold ||
-            local_y < threshold || local_y > cell_width - threshold ||
-            local_z < threshold || local_z > cell_width - threshold);
-}
-
-// Setup MPI datatype for particle_data
-void create_particle_data_type(MPI_Datatype *particle_type) {
-    const int nitems = 2;
-    int blocklengths[2] = {3, 3}; // There are 3 doubles for position and 3 doubles for velocity
-    MPI_Datatype types[2] = {MPI_DOUBLE, MPI_DOUBLE};
-    MPI_Aint offsets[2];
-
-    offsets[0] = offsetof(particle_data, rx); // Offset of the first element
-    offsets[1] = offsetof(particle_data, vx); // Offset of the first velocity element
-
-    MPI_Type_create_struct(nitems, blocklengths, offsets, types, particle_type);
-    MPI_Type_commit(particle_type);
-}
-
-
 
 /* Free cell list storage (including ghost lists) */
 static void free_cell_list(mdsys_t *sys) {
@@ -563,7 +421,7 @@ static void force(mdsys_t *sys) {
     // Calculate forces
     for (i = sys->start_cell; i <= sys->end_cell; ++i) {
         all_atoms += sys->clist[i].natoms;
-        printf("num of atoms in cell i: %d is %d, rank: %d\n", i, sys->clist[i].natoms, sys->mpirank);
+        // printf("num of atoms in cell i: %d is %d, rank: %d\n", i, sys->clist[i].natoms, sys->mpirank);
         // printf("nGhosts: %d\n", sys->clist[i].nghosts);
 
         for (j = 0; j < sys->clist[i].natoms; ++j) {
@@ -587,7 +445,7 @@ static void force(mdsys_t *sys) {
     }
 
 
-    printf("num of atoms: %d, rank: %d\n", all_atoms, sys->mpirank);
+    // printf("num of atoms: %d, rank: %d\n", all_atoms, sys->mpirank);
 
     // Sum local contributions to global arrays
 
@@ -614,9 +472,9 @@ static void velverlet(mdsys_t *sys)
     double dtmf;
     dtmf = 0.5*sys->dt / mvsq2e / sys->mass;
 
-    MPI_Allreduce(MPI_IN_PLACE, sys->vx, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
-    MPI_Allreduce(MPI_IN_PLACE, sys->vy, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
-    MPI_Allreduce(MPI_IN_PLACE, sys->vz, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
+    // MPI_Allreduce(MPI_IN_PLACE, sys->vx, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
+    // MPI_Allreduce(MPI_IN_PLACE, sys->vy, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
+    // MPI_Allreduce(MPI_IN_PLACE, sys->vz, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
 
     /* first part: propagate velocities by half and positions by full step */
     for (i=0; i<sys->natoms; ++i) {
@@ -638,6 +496,7 @@ static void velverlet(mdsys_t *sys)
         sys->vy[i] += dtmf * sys->fy[i];
         sys->vz[i] += dtmf * sys->fz[i];
     }
+    updcells(sys);
 }
 
 /* append data to output. */
@@ -651,11 +510,6 @@ static void output(mdsys_t *sys, FILE *erg, FILE *traj)
     for (i=0; i<sys->natoms; ++i) {
         fprintf(traj, "Ar  %20.8f %20.8f %20.8f\n", sys->rx[i], sys->ry[i], sys->rz[i]);
     }
-}
-
-// Helper function to determine if a cell index is local to the current MPI rank
-int is_local(mdsys_t *sys, int cell_index) {
-    return cell_index >= sys->start_cell && cell_index <= sys->end_cell;
 }
 
 int calculate_grid_dimensions(int nprocs) {
@@ -677,39 +531,6 @@ void assign_cells_to_ranks(mdsys_t *sys) {
     }
 
     printf("Rank: %d, Start cell: %d, End cell: %d\n", sys->mpirank, sys->start_cell, sys->end_cell);
-}
-
-
-void find_neighbors(mdsys_t *sys, int cell_index, int *neighbors) {
-    int k, m, n;
-    int ngrid = sys->ngrid;
-    int dx, dy, dz;
-    int nx, ny, nz;
-    int count = 0;
-
-    k = cell_index / (ngrid * ngrid); // z-coordinate
-    m = (cell_index % (ngrid * ngrid)) / ngrid; // y-coordinate
-    n = cell_index % ngrid; // x-coordinate
-
-    printf("Current cell %d coordinates: (%d, %d, %d)\n", cell_index, n, m, k);
-
-    for (dx = -1; dx <= 1; ++dx) {
-        for (dy = -1; dy <= 1; ++dy) {
-            for (dz = -1; dz <= 1; ++dz) {
-                if (dx == 0 && dy == 0 && dz == 0) continue;
-
-                nx = (n + dx + ngrid) % ngrid;
-                ny = (m + dy + ngrid) % ngrid;
-                nz = (k + dz + ngrid) % ngrid;
-
-                int neighbor_index = nz * ngrid * ngrid + ny * ngrid + nx;
-                neighbors[count++] = neighbor_index;
-
-                // printf("Neighbor cell %d coordinates: (%d, %d, %d)\n", neighbor_index, nx, ny, nz);
-            }
-        }
-    }
-    neighbors[count] = -1; // Terminate the list
 }
 
 
@@ -758,9 +579,6 @@ int main(int argc, char **argv)
 {
     // MPI Initialization phase
     MPI_Init( &argc, &argv);
-
-    MPI_Datatype particle_data_type;
-    create_particle_data_type(&particle_data_type);
 
     int nprint, i;
     char restfile[BLEN], trajfile[BLEN], ergfile[BLEN], line[BLEN];
@@ -895,23 +713,20 @@ int main(int argc, char **argv)
     }
     /**************************************************/
     /* main MD loop */
-    // for(sys.nfi=1; sys.nfi <= sys.nsteps; ++sys.nfi) {
+    for(sys.nfi=1; sys.nfi <= sys.nsteps; ++sys.nfi) {
 
-    //     if (sys.mpirank == 0) {
-    //     /* write output, if requested */
-    //         if ((sys.nfi % nprint) == 0) {
-    //             output(&sys, erg, traj);
-    //         }
-    // }
-    //     /* propagate system and recompute energies */
-    //     velverlet(&sys);
-    //     ekin(&sys);
+        if (sys.mpirank == 0) {
+        /* write output, if requested */
+            if ((sys.nfi % nprint) == 0) {
+                output(&sys, erg, traj);
+            }
+    }
+        /* propagate system and recompute energies */
+        velverlet(&sys);
+        ekin(&sys);
 
-    //     /* update cell list */
-    //     updcells(&sys);
-    //     update_ghost_lists(&sys);
-
-    // }
+        /* update cell list */
+    }
     /**************************************************/
 
     if (sys.mpirank == 0){
@@ -942,7 +757,6 @@ int main(int argc, char **argv)
     free_cell_list(&sys);
     if (sys.mpirank == 0)
     printf("Simulation Done.\n");
-    MPI_Type_free(&particle_data_type);
     MPI_Finalize();
 
     return 0;
