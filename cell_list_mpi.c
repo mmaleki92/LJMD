@@ -212,6 +212,7 @@ void update_ghost_cells(mdsys_t *sys) {
     MPI_Waitall(num_reqs, reqs, stats);
     printf("from rank %d the ghost 0 is %f \n", sys->mpirank, ghost_data_rx[0]);
     // Clean up
+
     free(neighbors);
     free(reqs);
     free(stats);
@@ -485,7 +486,6 @@ static void force(mdsys_t *sys) {
                 epot += compute_interaction(sys, idx1, idx2, x1, y1, z1, c12, c6, rcsq, boxby2);
 
             }
-    
         }
 
     }
