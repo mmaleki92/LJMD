@@ -151,73 +151,73 @@ static void updcells(mdsys_t *sys)
     double delta, boxby2, boxoffs;
     boxby2 = 0.5 * sys->box;
         
-    if (sys->clist == NULL) {
-        ngrid  = floor(cellrat * sys->box / sys->rcut);
-        ncell  = ngrid*ngrid*ngrid;
-        delta  = sys->box / ngrid;
-        boxoffs= boxby2 - 0.5*delta;
+    // if (sys->clist == NULL) {
+    //     ngrid  = floor(cellrat * sys->box / sys->rcut);
+    //     ncell  = ngrid*ngrid*ngrid;
+    //     delta  = sys->box / ngrid;
+    //     boxoffs= boxby2 - 0.5*delta;
         
-        sys->delta = delta;
-        sys->ngrid = ngrid;
-        sys->ncell = ncell;
-        
-        /* allocate cell list storage */
-        sys->clist = (cell_t *) malloc(ncell*sizeof(cell_t));
-        sys->plist = (int *) malloc(2*ncell*ncell*sizeof(int));
+    //     sys->delta = delta;
+    //     sys->ngrid = ngrid;
+    //     sys->ncell = ncell;
+    
+    //     /* allocate cell list storage */
+    //     sys->clist = (cell_t *) malloc(ncell*sizeof(cell_t));
+    //     // sys->plist = (int *) malloc(2*ncell*ncell*sizeof(int));
 
-        /* allocate index lists within cell. cell density < 2x avg. density */
-        nidx = 2*sys->natoms / ncell + 2;
-        nidx = ((nidx/2) + 1) * 2;
-        sys->nidx = nidx;
-        for (i=0; i<ncell; ++i) {
-            sys->clist[i].idxlist = (int *) malloc(nidx*sizeof(int));
-            sys->clist[i].natoms = 0;  // Ensure natoms is initialized to zero
-        }
+    //     /* allocate index lists within cell. cell density < 2x avg. density */
+    //     nidx = 2*sys->natoms / ncell + 2;
+    //     nidx = ((nidx/2) + 1) * 2;
+    //     sys->nidx = nidx;
+    //     for (i=0; i<ncell; ++i) {
+    //         sys->clist[i].idxlist = (int *) malloc(nidx*sizeof(int));
+    //         sys->clist[i].natoms = 0;  // Ensure natoms is initialized to zero
+    //     }
 
-        /* build cell pair list, assuming newtons 3rd law. */
-        npair = 0;
-        for (i=0; i < ncell-1; ++i) {
-            double x1,x2,y1,y2,z1,z2,rx,ry,rz;
+    //     /* build cell pair list, assuming newtons 3rd law. */
+    //     // npair = 0;
+    //     // for (i=0; i < ncell-1; ++i) {
+    //     //     double x1,x2,y1,y2,z1,z2,rx,ry,rz;
             
-            k  = i/ngrid/ngrid;
-            x1 = k*delta - boxoffs;
-            y1 = ((i-(k*ngrid*ngrid))/ngrid)*delta - boxoffs;
-            z1 = (i % ngrid)*delta - boxoffs;
+    //     //     k  = i/ngrid/ngrid;
+    //     //     x1 = k*delta - boxoffs;
+    //     //     y1 = ((i-(k*ngrid*ngrid))/ngrid)*delta - boxoffs;
+    //     //     z1 = (i % ngrid)*delta - boxoffs;
 
-            for (j=i+1; j<ncell; ++j) {
-                k  = j/ngrid/ngrid;
-                x2 = k*delta - boxoffs;
-                y2 = ((j-(k*ngrid*ngrid))/ngrid)*delta - boxoffs;
-                z2 = (j % ngrid)*delta - boxoffs;
+    //     //     for (j=i+1; j<ncell; ++j) {
+    //     //         k  = j/ngrid/ngrid;
+    //     //         x2 = k*delta - boxoffs;
+    //     //         y2 = ((j-(k*ngrid*ngrid))/ngrid)*delta - boxoffs;
+    //     //         z2 = (j % ngrid)*delta - boxoffs;
 
-                rx=pbc(x1 - x2, boxby2, sys->box);
-                ry=pbc(y1 - y2, boxby2, sys->box);
-                rz=pbc(z1 - z2, boxby2, sys->box);
+    //     //         rx=pbc(x1 - x2, boxby2, sys->box);
+    //     //         ry=pbc(y1 - y2, boxby2, sys->box);
+    //     //         rz=pbc(z1 - z2, boxby2, sys->box);
 
-                /* check for cells on a line that are too far apart */
-                if (fabs(rx) > sys->rcut+delta) continue;
-                if (fabs(ry) > sys->rcut+delta) continue;
-                if (fabs(rz) > sys->rcut+delta) continue;
+    //     //         /* check for cells on a line that are too far apart */
+    //     //         if (fabs(rx) > sys->rcut+delta) continue;
+    //     //         if (fabs(ry) > sys->rcut+delta) continue;
+    //     //         if (fabs(rz) > sys->rcut+delta) continue;
 
-                /* check for cells in a plane that are too far apart */
-                if (sqrt(rx*rx+ry*ry) > (sys->rcut+sqrt(2.0)*delta)) continue;
-                if (sqrt(rx*rx+rz*rz) > (sys->rcut+sqrt(2.0)*delta)) continue;
-                if (sqrt(ry*ry+rz*rz) > (sys->rcut+sqrt(2.0)*delta)) continue;
+    //     //         /* check for cells in a plane that are too far apart */
+    //     //         if (sqrt(rx*rx+ry*ry) > (sys->rcut+sqrt(2.0)*delta)) continue;
+    //     //         if (sqrt(rx*rx+rz*rz) > (sys->rcut+sqrt(2.0)*delta)) continue;
+    //     //         if (sqrt(ry*ry+rz*rz) > (sys->rcut+sqrt(2.0)*delta)) continue;
 
-                /* other cells that are too far apart */
-                if (sqrt(rx*rx + ry*ry + rz*rz) > (sqrt(3.0)*delta+sys->rcut)) continue;
+    //     //         /* other cells that are too far apart */
+    //     //         if (sqrt(rx*rx + ry*ry + rz*rz) > (sqrt(3.0)*delta+sys->rcut)) continue;
                 
-                /* cells are close enough. add to list */
-                sys->plist[2*npair  ] = i;
-                sys->plist[2*npair+1] = j;
-                ++npair;
-            }
-        }
-        sys->npair = npair;
-        printf("Cell list has %dx%dx%d=%d cells with %d/%d pairs and "
-               "%d atoms/celllist.\n", ngrid, ngrid, ngrid, sys->ncell, 
-               sys->npair, ncell*(ncell-1)/2, nidx);
-    }
+    //     //         /* cells are close enough. add to list */
+    //     //         sys->plist[2*npair  ] = i;
+    //     //         sys->plist[2*npair+1] = j;
+    //     //         ++npair;
+    //     //     }
+    //     // }
+    //     // sys->npair = npair;
+    //     printf("Cell list has %dx%dx%d=%d cells with %d/%d pairs and "
+    //            "%d atoms/celllist.\n", ngrid, ngrid, ngrid, sys->ncell, 
+    //            sys->npair, ncell*(ncell-1)/2, nidx);
+    // }
 
     /* reset cell list and sort atoms into cells */
     ncell=sys->ncell;
@@ -238,6 +238,10 @@ static void updcells(mdsys_t *sys)
         n=floor((pbc(sys->rz[i], boxby2, sys->box)+boxby2)/delta);
         j = ngrid*ngrid*k+ngrid*m+n;
 
+        // if (cell_index >= sys->ncell) {
+        //     printf("Calculated cell index %d is out of bounds for atom %d\n", cell_index, i);
+        //     cell_index = sys->ncell - 1;  // Clamp to max index
+        // }
         idx = sys->clist[j].natoms;
         sys->clist[j].idxlist[idx]=i;
         ++idx;
@@ -282,7 +286,7 @@ void create_particle_data_type(MPI_Datatype *particle_type) {
 }
 
 
-// Function to identify boundary atoms
+// // Function to identify boundary atoms
 void identify_boundary_atoms(mdsys_t *sys, double threshold) {
     int i;
     for (i = 0; i < sys->natoms; i++) {
@@ -324,6 +328,8 @@ double compute_interaction(mdsys_t *sys, int idx1, int idx2, double x1, double y
     double dx = pbc(sys->rx[idx2] - x1, boxby2, sys->box);
     double dy = pbc(sys->ry[idx2] - y1, boxby2, sys->box);
     double dz = pbc(sys->rz[idx2] - z1, boxby2, sys->box);
+
+    
     double rsq = dx * dx + dy * dy + dz * dz;
     double epot = 0.0;
 
@@ -331,12 +337,12 @@ double compute_interaction(mdsys_t *sys, int idx1, int idx2, double x1, double y
         double rinv = 1.0 / rsq;
         double r6 = rinv * rinv * rinv;
         double ffac = (12.0 * c12 * r6 - 6.0 * c6) * r6 * rinv;
-        sys->fx[idx1] += dx * ffac;
-        sys->fy[idx1] += dy * ffac;
-        sys->fz[idx1] += dz * ffac;
-        sys->fx[idx2] -= dx * ffac;
-        sys->fy[idx2] -= dy * ffac;
-        sys->fz[idx2] -= dz * ffac;
+        sys->cx[idx1] += dx * ffac;
+        sys->cy[idx1] += dy * ffac;
+        sys->cz[idx1] += dz * ffac;
+        sys->cx[idx2] -= dx * ffac;
+        sys->cy[idx2] -= dy * ffac;
+        sys->cz[idx2] -= dz * ffac;
 
         // Potential energy calculation
         epot = (c12 * r6 - c6) * r6;
@@ -348,14 +354,19 @@ static void force(mdsys_t *sys) {
     double ffac, c12, c6, boxby2;
     double rx, ry, rz, rsq, rcsq;
     int i, j;
-
+    int all_atoms = 0;
     // Precompute constants
     c12 = 4.0 * sys->epsilon * pow(sys->sigma, 12.0);
     c6  = 4.0 * sys->epsilon * pow(sys->sigma, 6.0);
     rcsq = sys->rcut * sys->rcut;
     boxby2 = 0.5 * sys->box;
     double epot = 0.0;
-    // Zero out forces
+
+    azzero(sys->cx, sys->natoms);
+    azzero(sys->cy, sys->natoms);
+    azzero(sys->cz, sys->natoms);
+    
+    // // Zero out forces
     azzero(sys->fx, sys->natoms);
     azzero(sys->fy, sys->natoms);
     azzero(sys->fz, sys->natoms);
@@ -364,45 +375,54 @@ static void force(mdsys_t *sys) {
     MPI_Bcast(sys->ry, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
     MPI_Bcast(sys->rz, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
     
-    // MPI_Bcast(sys->vx, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
-    // MPI_Bcast(sys->vy, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
-    // MPI_Bcast(sys->vz, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
+    MPI_Bcast(sys->vx, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
+    MPI_Bcast(sys->vy, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
+    MPI_Bcast(sys->vz, sys->natoms, MPI_DOUBLE, 0, sys->mpicomm);
     
     // Calculate forces
     for (i = sys->start_cell; i < sys->end_cell; ++i) {
+        all_atoms += sys->clist[i].natoms;
+        printf("num of atoms in cell i: %d is %d, rank: %d\n", i, sys->clist[i].natoms, sys->mpirank);
+
         for (j = 0; j < sys->clist[i].natoms; ++j) {
             int idx1 = sys->clist[i].idxlist[j];
             double x1 = sys->rx[idx1], y1 = sys->ry[idx1], z1 = sys->rz[idx1];
-
             // Interaction with other real atoms
             for (int k = j + 1; k < sys->clist[i].natoms; ++k) {
-
                 // printf("sys->clist[i].natoms: %d\n", sys->clist[i].natoms);
                 int idx2 = sys->clist[i].idxlist[k];
-                epot += compute_interaction(sys, idx1, idx2, x1, y1, z1, c12, c6, rcsq, boxby2);            }
+                epot += compute_interaction(sys, idx1, idx2, x1, y1, z1, c12, c6, rcsq, boxby2);            
+            }
 
             // Interaction with ghost atoms
             for (int k = 0; k < sys->clist[i].nghosts; ++k) {
                 int idx2 = sys->clist[i].ghostlist[k];
                 epot += compute_interaction(sys, idx1, idx2, x1, y1, z1, c12, c6, rcsq, boxby2);
+
             }
+    
         }
+
+
     }
 
+
+    printf("num of atoms: %d, rank: %d\n", all_atoms, sys->mpirank);
 
     // Sum local contributions to global arrays
 
     // Reduce forces across all MPI ranks
-    MPI_Allreduce(MPI_IN_PLACE, sys->fx, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
-    MPI_Allreduce(MPI_IN_PLACE, sys->fy, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
-    MPI_Allreduce(MPI_IN_PLACE, sys->fz, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
-
+    MPI_Reduce(sys->cx, sys->fx, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
+    MPI_Reduce(sys->cy, sys->fy, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
+    MPI_Reduce(sys->cz, sys->fz, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
+    MPI_Reduce(&epot, &sys->epot, 1, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
+    
 
     // MPI_Reduce(sys->cx, sys->fx, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
     // MPI_Reduce(sys->cy, sys->fy, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
     // MPI_Reduce(sys->cz, sys->fz, sys->natoms, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
     
-    MPI_Reduce(&epot, &sys->epot, 1, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
+    // MPI_Reduce(&epot, &sys->epot, 1, MPI_DOUBLE, MPI_SUM, 0, sys->mpicomm);
 
 }
 /* velocity verlet */
@@ -412,9 +432,9 @@ static void velverlet(mdsys_t *sys)
     double dtmf;
     dtmf = 0.5*sys->dt / mvsq2e / sys->mass;
 
-    // MPI_Allreduce(MPI_IN_PLACE, sys->vx, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
-    // MPI_Allreduce(MPI_IN_PLACE, sys->vy, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
-    // MPI_Allreduce(MPI_IN_PLACE, sys->vz, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
+    MPI_Allreduce(MPI_IN_PLACE, sys->vx, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
+    MPI_Allreduce(MPI_IN_PLACE, sys->vy, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
+    MPI_Allreduce(MPI_IN_PLACE, sys->vz, sys->natoms, MPI_DOUBLE, MPI_SUM, sys->mpicomm);
 
     /* first part: propagate velocities by half and positions by full step */
     for (i=0; i<sys->natoms; ++i) {
@@ -477,6 +497,8 @@ void assign_cells_to_ranks(mdsys_t *sys) {
     if (row == grid_dim - 1) { // Last row
         sys->end_cell += (sys->ngrid % grid_dim) * sys->ngrid;
     }
+
+    printf("Rank: %d grid_dim: %d cells_per_row: %d start_cell: %d, end_cell %d \n",sys->mpirank, grid_dim, cells_per_row, sys->start_cell, sys->end_cell);
 }
 
 void find_neighbors(mdsys_t *sys, int cell_index, int *neighbors) {
@@ -530,7 +552,7 @@ void find_neighbors(mdsys_t *sys, int cell_index, int *neighbors) {
 void update_ghost_lists(mdsys_t *sys) {
     int i, j;
 
-    for (i = sys->start_cell; i <= sys->end_cell; ++i) {
+    for (i = sys->start_cell; i < sys->end_cell; ++i) {
         if (sys->clist[i].ghostlist != NULL) {
             free(sys->clist[i].ghostlist); // Free the old ghost list
         }
@@ -540,6 +562,8 @@ void update_ghost_lists(mdsys_t *sys) {
         int nghosts = 0;
 
         int neighbors[100];  // Buffer for neighbor indices
+
+        printf("Rank %d i: %d\n", sys->mpirank, i);
         find_neighbors(sys, i, neighbors);
         
         for (j = 0; neighbors[j] != -1; j++) {
@@ -585,6 +609,67 @@ void exchange_boundary_data(mdsys_t *sys, MPI_Datatype particle_data_type) {
 
     free(sendbuf);
     free(recvbuf);
+}
+
+void initialize_and_assign_cells(mdsys_t *sys) {
+    int i, k, m, n, idx;
+    double boxby2 = 0.5 * sys->box;
+    double delta, boxoffs;
+
+    // Calculate the grid dimensions and cell sizes
+    sys->ngrid = floor(sys->box / (sys->rcut * cellrat));
+    sys->ncell = sys->ngrid * sys->ngrid * sys->ngrid;
+    delta = sys->box / sys->ngrid;
+    boxoffs = boxby2 - 0.5 * delta;
+
+    sys->delta = delta;
+
+    // Allocate memory for cell list
+    sys->clist = (cell_t *)malloc(sys->ncell * sizeof(cell_t));
+    int nidx = 2 * sys->natoms / sys->ncell + 2; // Ensure enough space
+    nidx = ((nidx / 2) + 1) * 2;  // Round up to the nearest even number
+    sys->nidx = nidx;
+    for (i = 0; i < sys->ncell; ++i) {
+        sys->clist[i].idxlist = (int *)malloc(nidx * sizeof(int));
+        sys->clist[i].natoms = 0;  // Initialize to zero
+    }
+
+    // Assign cells to ranks
+    int grid_dim = calculate_grid_dimensions(sys->nsize);
+    int cells_per_row = sys->ngrid / grid_dim;
+
+    int row = sys->mpirank / grid_dim;
+    int col = sys->mpirank % grid_dim;
+
+    sys->start_cell = (row * cells_per_row * sys->ngrid) + (col * cells_per_row);
+    sys->end_cell = sys->start_cell + cells_per_row * sys->ngrid - 1;
+
+    // Adjust for boundaries in the last row or column
+    if (col == grid_dim - 1) {
+        sys->end_cell += (sys->ngrid % cells_per_row);
+    }
+    if (row == grid_dim - 1) {
+        sys->end_cell += (sys->ngrid % cells_per_row) * sys->ngrid;
+    }
+
+    // Distribute atoms to cells
+    for (i = 0; i < sys->natoms; ++i) {
+        k = floor((pbc(sys->rx[i], boxby2, sys->box) + boxby2) / delta);
+        m = floor((pbc(sys->ry[i], boxby2, sys->box) + boxby2) / delta);
+        n = floor((pbc(sys->rz[i], boxby2, sys->box) + boxby2) / delta);
+        int cell_index = n * sys->ngrid * sys->ngrid + m * sys->ngrid + k;
+
+        if (cell_index >= sys->ncell) {
+            printf("Calculated cell index %d is out of bounds for atom %d\n", cell_index, i);
+            cell_index = sys->ncell - 1;  // Clamp to max index
+        }
+
+        idx = sys->clist[cell_index].natoms;
+        sys->clist[cell_index].idxlist[idx] = i;
+        ++(sys->clist[cell_index].natoms);
+    }
+        printf("Rank: %d grid_dim: %d cells_per_row: %d start_cell: %d, end_cell %d \n",sys->mpirank, grid_dim, cells_per_row, sys->start_cell, sys->end_cell);
+
 }
 
 /* main */
@@ -698,22 +783,18 @@ int main(int argc, char **argv)
     /* create initial cell list */
     sys.clist = NULL;
     sys.plist = NULL;
+    // assign_cells_to_ranks(&sys);
+    initialize_and_assign_cells(&sys);
+    updcells(&sys);
+    // update_ghost_lists(&sys);
 
-        updcells(&sys);
-        assign_cells_to_ranks(&sys);  
-    // if (sys.mpirank == 0) {
-      
-        update_ghost_lists(&sys);
-
-    // }
-    
     if (sys.mpirank == 0) {
         printf("ncell: %d\n", sys.ncell);
     }
     /* initialize forces and energies.*/
     sys.nfi=0;
-    force(&sys);
-    ekin(&sys);
+    // force(&sys);
+    // ekin(&sys);
     
     if (sys.mpirank == 0) {
         printf("Starting simulation with %d atoms for %d steps.\n",sys.natoms, sys.nsteps);
